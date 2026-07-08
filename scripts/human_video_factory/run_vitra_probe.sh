@@ -12,6 +12,8 @@ TOKEN_FILE="${TOKEN_FILE:-/tmp/overnight-tests/.hf_token}"
 CACHE="${DATA_DIR}/cache/huggingface"
 MODE="${MODE:-probe}"          # probe | decode
 IMG_ARG="${IMG_ARG:-}"         # decode: optional image path
+# right-hand anno layout discovered in Exp-8.0 (single-hand slice within the 102-dim action)
+LAYOUT="${LAYOUT:-{\"wrist_trans\":[51,54],\"wrist_rot\":[54,57],\"finger\":[57,102]}}"
 OUT="${OUT:-/data/zhengjli/human-to-humanoid/_out/vitra_probe}"
 
 echo "=== VITRA action ${MODE} (Exp-8.0) IMAGE=${IMAGE} ==="
@@ -22,7 +24,7 @@ docker run --rm -i \
   -e HIP_VISIBLE_DEVICES=0 \
   -e HF_HOME="${CACHE}" -e TRANSFORMERS_CACHE="${CACHE}" \
   -e REPO="${REPO}" -e VITRA_REPO="${VITRA_REPO}" -e MODE="${MODE}" \
-  -e IMG_ARG="${IMG_ARG}" -e OUT="${OUT}" \
+  -e IMG_ARG="${IMG_ARG}" -e OUT="${OUT}" -e LAYOUT="${LAYOUT}" \
   -v "${DATA_DIR}:${DATA_DIR}" \
   -v "${TOKEN_FILE}:/root/.hf_token:ro" \
   -w "${VITRA_REPO}" \
@@ -43,7 +45,7 @@ PY
 mkdir -p "${OUT}"
 ARGS="--vitra_repo ${VITRA_REPO} --mode ${MODE}"
 if [ "${MODE}" = "decode" ]; then
-  ARGS="${ARGS} --out ${OUT}/hand_traj.npz"
+  ARGS="${ARGS} --out ${OUT}/hand_traj.npz --layout_json ${LAYOUT}"
   [ -n "${IMG_ARG}" ] && ARGS="${ARGS} --image ${IMG_ARG}"
 fi
 echo "--- run vitra_action_decode.py ${ARGS} ---"
