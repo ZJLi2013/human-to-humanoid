@@ -188,6 +188,8 @@ def decode(vitra_repo, image_path, out_path, layout_json=None):
         "denorm_action_shape": list(np.asarray(denorm).shape),
         "action_finite": bool(np.isfinite(denorm).all()),
         "segments": {k: list(np.asarray(v).shape) for k, v in segs.items()},
+        "segment_ranges": {k: {"min": round(float(np.min(v)), 4), "max": round(float(np.max(v)), 4),
+                               "mean": round(float(np.mean(v)), 4)} for k, v in segs.items()},
         "layout_used": layout or "none (raw dumped) — run --mode probe to discover slices",
         "note": "wrist frame convention (cam-relative) per VITRA; confirm before retarget.",
     }
