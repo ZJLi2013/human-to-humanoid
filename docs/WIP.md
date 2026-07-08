@@ -21,7 +21,7 @@
 
 ## 已完成关键结论
 
-- **VITRA on ROCm**：纯 PyTorch + `transformers`（DiT 用 torch SDPA），`rocm/pytorch:2.9.1` 开箱即用，无需 DeepSpeed/FlashAttention。8×MI300X FSDP 满 1000 步 loss 0.29→0.21，RCCL / ckpt / resume 正常，**零 fork**；唯一 AMD 专属适配 = `HSA_NO_SCRATCH_RECLAIM=1`（另有平台无关 decord fix）。详见 `overnight_tasks/VITRA/experiments.md`。
+- **VITRA on ROCm**：纯 PyTorch + `transformers`（DiT 用 torch SDPA），`rocm/pytorch:2.9.1` 开箱即用，无需 DeepSpeed/FlashAttention。8×MI300X FSDP 满 1000 步 loss 0.29→0.21，RCCL / ckpt / resume 正常，**零 fork**；唯一 AMD 专属适配 = `HSA_NO_SCRATCH_RECLAIM=1`（另有平台无关 decord fix）。复现见 `scripts/vitra/`。
 - **HaWoR 前端**：全链路唯一的硬 CUDA 阻塞（masked DROID-SLAM + lietorch 自定义 kernel）已 hipify 并回馈上游（均单文件 PR）。License CC BY-NC-ND → 研究用途。
 - **精度头条**：腕世界轨迹 RTE median **1.9cm**，足以驱动 VITRA 式 retargeting；指尖 9.5cm 有歧义，不作强结论。
 
@@ -29,9 +29,10 @@
 
 | 优先级 | feature | 内容 |
 |---|---|---|
-| **P1（L2）** | feature8 | **L2+L3 路径验证**：先走 **①**（零训练）VITRA 手部动作输出 → dex-retarget 到 sim floating 灵巧手（LEAP/Allegro，MuJoCo-Warp/Genesis）→ 零样本抓取成功率 baseline → 不够再走 **③**（整个 VITRA VLA 端到端续训 + 动作空间对齐，**保留并微调 DiT 动作先验**）。**②（抽 `f^c` 训 adapter）丢弃 DiT 动作先验、性价比最差，不走**。三条 adaptation 干预点与两条 gap 详见 `study.md §1`；**设计（sim 当验证器不当数据工厂、rendering 触发条件、分阶段）见 `docs/features/feature8_l2l3_sim.md`** |
+| **P1** | feature8 | **L2 zero-shot baseline**（开环、无训练、**零渲染**）：VITRA 手部输出 → dex-retarget 到 sim floating 灵巧手（LEAP/Allegro，MuJoCo-Warp+Do-as-I-Do 现成）→ 零样本抓取成功率 baseline。据此决定要不要 feature9。设计见 `docs/features/feature8_l2_embodiment.md` |
+| P2 | feature9 | **sim 数据生成 → post-train → 闭环验证**（依赖 feature8 结果）：① Do-as-I-Do 放量造 rollout → ② 续训 VITRA（保留 DiT 先验；**②抽 `f^c` 训 adapter 丢先验、不走**）→ ③ 闭环 policy-in-sim。观测 A(真视频·零渲染)/B(机器人视角·需渲染)分叉；渲染才评估 Genesis（与 MuJoCo-Warp 物理共存非替换）。三干预点+两 gap 见 `study.md §1`；设计见 `docs/features/feature9_l3_sim_deploy.md` |
 
 
 ## 约定
 
-产物分工：设计/实验记录进 `docs/features/` + `docs/experiments/`；代码/长跑进 `overnight_tasks/human_video_factory/`；HaWoR / VITRA 各留原 fork，不做 submodule。
+产物分工：设计/实验记录进 `docs/features/` + `docs/experiments/`；代码/长跑脚本进 `scripts/`（`human_video_factory/`、`do-as-i-do/`、`vitra/`、`hawor/`）；HaWoR / VITRA / Do-as-I-Do 各留原 fork，不做 submodule。**本项目自包含，不引用外部仓。**
