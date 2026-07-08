@@ -161,23 +161,30 @@ def decode(vitra_repo, image_path, out_path, layout_json=None):
         num_ddim_steps=10, cfg_scale=5.0, fov=fov, sample_times=1)
     norm_action = np.asarray(norm_action, dtype="float32")
 
-    # de-normalize using the normalizer (best-effort: try common method names).
+    # VITRA pads the action to a unified dim (192); real content = first action_mean_dim (102).
+    real_dim = int(np.asarray(nz.action_mean).shape[0])
+    act = norm_action[..., :real_dim]
+
+    # de-normalize (best-effort: try normalizer methods on the real-dim slice, else manual).
     denorm = None
-    for m in ("denormalize_action", "unnormalize_action", "inverse_action"):
+    for m in ("denormalize_action", "unnormalize_action", "inverse_action", "unnorm_action"):
         if hasattr(nz, m):
             try:
-                denorm = np.asarray(getattr(nz, m)(norm_action), dtype="float32")
+                denorm = np.asarray(getattr(nz, m)(act), dtype="float32")
                 break
             except Exception:
                 pass
     if denorm is None:
-        denorm = norm_action * np.asarray(nz.action_std if hasattr(nz, "action_std") else 1.0) \
-                 + np.asarray(nz.action_mean if hasattr(nz, "action_mean") else 0.0)
+        std = getattr(nz, "action_std", None)
+        if std is None:
+            std = getattr(nz, "action_scale", 1.0)
+        denorm = act * np.asarray(std) + np.asarray(nz.action_mean)
 
     layout = json.loads(layout_json) if layout_json else None
     segs = _split_action(denorm, layout)
     meta = {
         "norm_action_shape": list(norm_action.shape),
+        "real_dim": real_dim,
         "denorm_action_shape": list(np.asarray(denorm).shape),
         "action_finite": bool(np.isfinite(denorm).all()),
         "segments": {k: list(np.asarray(v).shape) for k, v in segs.items()},
