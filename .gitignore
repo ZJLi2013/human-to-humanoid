@@ -1,4 +1,7 @@
-docs/
+docs/experiments/
+docs/features/
+docs/background/
+
 .cline_storage/
 __pycache__/
 *.pyc

@@ -50,8 +50,9 @@ if done_ deps; then echo "  [skip] deps already installed"; else
     dill lapx "pytorch-lightning==2.2.4" lightning-utilities "torchmetrics==1.4.0" \
     trimesh pyrender "moderngl-window==2.4.6" "aitviewer==1.13.0" \
     "huggingface_hub[cli]" gdown 2>&1 | tail -6
-  # chumpy (MANO loader) -- known numpy>=1.24 incompatibility, patch after install
-  pip install -q "chumpy@git+https://github.com/mattloper/chumpy" 2>&1 | tail -3 || true
+  # chumpy (MANO loader) -- old setup.py imports pip inside the build-isolation env
+  # (ModuleNotFoundError: pip); --no-build-isolation uses outer env. Then patch numpy import.
+  pip install -q --no-build-isolation "chumpy@git+https://github.com/mattloper/chumpy" 2>&1 | tail -3 || true
   CH=$(python -c "import chumpy,os;print(os.path.dirname(chumpy.__file__))" 2>/dev/null)
   if [ -n "$CH" ] && [ -f "$CH/__init__.py" ]; then
     sed -i 's/^from numpy import bool, int, float, complex, object, unicode, str, nan, inf/from numpy import nan, inf/' "$CH/__init__.py"
@@ -74,6 +75,10 @@ else
   sed -i '/gencode=arch=compute/d' $LIET/setup.py
   sed -i 's/Matrix4x4()\.block<3,3>/Matrix4x4().template block<3,3>/' $LIET/lietorch/src/lietorch_gpu.cu
   sed -i 's/\.type()/.scalar_type()/g' $DROID/src/*.cu 2>/dev/null
+  # P6: lietorch DISPATCH call sites x.type() -> x.scalar_type() (else "cannot convert to c10::ScalarType").
+  # Match any /DISPATCH/ line (lietorch DISPATCH_GROUP_AND_FLOATING_TYPES + torch AT_DISPATCH_*), covering
+  # src/ and extras/ (corr_index_kernel). Line-scoped so x.device().type() (DeviceType) is untouched.
+  sed -i '/DISPATCH/ s/\.type()/.scalar_type()/g' $LIET/lietorch/src/*.cu $LIET/lietorch/src/*.cpp $LIET/lietorch/extras/*.cu $LIET/lietorch/extras/*.cpp 2>/dev/null
   grep -rl 'EIGEN_USING_STD(fill_n)' $DROID/thirdparty/eigen/Eigen 2>/dev/null \
     | xargs -r sed -i 's/EIGEN_USING_STD(fill_n);/using std::fill_n;/g'
   echo "  building lietorch"

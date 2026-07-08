@@ -32,12 +32,12 @@ RUN python -m pip install -q --upgrade pip && \
       "huggingface_hub[cli]" gdown && \
     pip install -q --no-build-isolation "mmcv==1.7.2"
 
-# chumpy(MANO loader) 与 numpy>=1.24 不兼容 —— 装完就地补掉失效的 numpy import。
-RUN pip install -q "chumpy@git+https://github.com/mattloper/chumpy" || true && \
-    CH=$(python -c "import chumpy,os;print(os.path.dirname(chumpy.__file__))" 2>/dev/null) && \
-    if [ -n "$CH" ]; then \
-      sed -i 's/^from numpy import bool, int, float, complex, object, unicode, str, nan, inf/from numpy import nan, inf/' "$CH/__init__.py"; \
-    fi
+# chumpy(MANO loader)：老 setup.py 在 build 隔离环境里 import pip 会 ModuleNotFoundError，
+# 故 --no-build-isolation 用外层（已装 pip/numpy/setuptools<81）构建；装完再就地补掉失效的 numpy import。
+RUN pip install -q --no-build-isolation "chumpy@git+https://github.com/mattloper/chumpy" && \
+    CH=$(python -c "import chumpy,os;print(os.path.dirname(chumpy.__file__))") && \
+    sed -i 's/^from numpy import bool, int, float, complex, object, unicode, str, nan, inf/from numpy import nan, inf/' "$CH/__init__.py" && \
+    python -c "import chumpy; print('chumpy', chumpy.__version__)"
 
 # torch_scatter 用 pyg-rocm-build 的预编译 wheel（torch2.10 / rocm7.1 / py310，rocm7.2 runtime 可加载）。
 RUN cd /tmp && \
@@ -53,16 +53,21 @@ RUN git clone --recursive --branch amd_support https://github.com/ZJLi2013/HaWoR
     git config --global --add safe.directory '*'
 
 WORKDIR /opt/HaWoR
-# 5 处 ROCm patch（P1-P5，幂等；fork 已含部分 in-tree，重复应用无副作用）：
+# 6 处 ROCm patch（P1-P6，幂等；fork 已含部分 in-tree，重复应用无副作用）：
 #  P1/P2 setup.py 去掉 nvcc 的 -gencode（clang/hipcc 拒收）
 #  P3 lietorch_gpu.cu 依赖模板成员调用加 .template
 #  P4 masked kernel 的 Tensor.type() -> .scalar_type()（新 torch 不再隐式转 ScalarType）
 #  P5 bundled Eigen 的 EIGEN_USING_STD(fill_n) 在 hipcc 下展开为全局 fill_n（不存在）-> using std::
+#  P6 lietorch 的 DISPATCH 调用点 x.type() -> x.scalar_type()（同 P4；dispatch.h 的 scalar_type(TYPE)
+#     与 AT_DISPATCH_* 均不再接受 DeprecatedTypeProperties）。**只改含 DISPATCH 的行**（涵盖 lietorch 自定义
+#     DISPATCH_GROUP_AND_FLOATING_TYPES 与 torch AT_DISPATCH_*），否则误伤 x.device().type()（c10::Device 无
+#     scalar_type）。覆盖 src/ 与 extras/（corr_index_kernel 在 extras/）。
 RUN DROID=thirdparty/DROID-SLAM && LIET=$DROID/thirdparty/lietorch && \
     sed -i '/gencode=arch=compute/d' $DROID/setup.py && \
     sed -i '/gencode=arch=compute/d' $LIET/setup.py && \
     sed -i 's/Matrix4x4()\.block<3,3>/Matrix4x4().template block<3,3>/' $LIET/lietorch/src/lietorch_gpu.cu && \
     sed -i 's/\.type()/.scalar_type()/g' $DROID/src/*.cu 2>/dev/null || true; \
+    sed -i '/DISPATCH/ s/\.type()/.scalar_type()/g' $LIET/lietorch/src/*.cu $LIET/lietorch/src/*.cpp $LIET/lietorch/extras/*.cu $LIET/lietorch/extras/*.cpp 2>/dev/null || true; \
     grep -rl 'EIGEN_USING_STD(fill_n)' $DROID/thirdparty/eigen/Eigen 2>/dev/null \
       | xargs -r sed -i 's/EIGEN_USING_STD(fill_n);/using std::fill_n;/g'
 
@@ -70,7 +75,7 @@ RUN DROID=thirdparty/DROID-SLAM && LIET=$DROID/thirdparty/lietorch && \
 RUN DROID=thirdparty/DROID-SLAM && LIET=$DROID/thirdparty/lietorch && \
     pip install --no-build-isolation "$LIET" && \
     python -c "import lietorch; from lietorch import SE3; print('lietorch OK')" && \
-    find $DROID -maxdepth 2 -name '*.egg-info' -exec rm -rf {} + 2>/dev/null; \
+    { find $DROID -maxdepth 2 -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true; } && \
     ( cd $DROID && rm -rf build && python setup.py install ) && \
     python -c "import torch, droid_backends; print('droid_backends OK')"
 
