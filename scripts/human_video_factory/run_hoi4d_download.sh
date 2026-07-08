@@ -42,14 +42,21 @@ cd "$HOI4D_DIR"
 onedrive_dl() {  # $1=share_url $2=out_file  (resumable, idempotent)
   local url="$1" out="$2"
   if [ -s "$out" ]; then echo "  skip $out ($(du -h "$out" | cut -f1))"; return 0; fi
-  local b64
-  b64=$(printf '%s' "$url" | base64 -w0 | tr '/+' '_-' | tr -d '=')
+  echo "  resolve $out"
+  # 1drv.ms 301 -> onedrive.live.com/redir?... ; anonymous direct download = swap redir->download
+  local loc dl
+  loc=$(curl -sI -m 60 "$url" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
+  if [ -z "$loc" ]; then echo "  RESOLVE_FAIL $out (no redirect)"; return 1; fi
+  dl=${loc/redir?/download?}
   echo "  download -> $out"
-  curl -fL -m 7200 --retry 5 -C - \
-    "https://api.onedrive.com/v1.0/shares/u!${b64}/root/content" -o "$out.part" \
+  curl -fL -m 7200 --retry 5 -C - "$dl" -o "$out.part" \
     && mv -f "$out.part" "$out" \
     && echo "  ok $out ($(du -h "$out" | cut -f1))" \
-    || { echo "  DL_FAIL $out"; return 1; }
+    || { echo "  DL_FAIL $out (try method2: api shares)"; \
+         local b64; b64=$(printf '%s' "$url" | base64 -w0 | tr '/+' '_-' | tr -d '='); \
+         curl -fL -m 7200 --retry 5 -C - "https://api.onedrive.com/v1.0/shares/u!${b64}/root/content" -o "$out.part" \
+           && mv -f "$out.part" "$out" && echo "  ok(method2) $out ($(du -h "$out" | cut -f1))" \
+           || { echo "  DL_FAIL $out (both methods)"; return 1; }; }
 }
 
 echo "=== [1] small components (CAD + Annotations + Camera[, HandPose]) ==="
