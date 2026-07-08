@@ -48,7 +48,7 @@ flowchart LR
 
 - **DexWM**（facebookresearch/dexwm，arXiv:2512.13644，FAIR）：`video → 3D → world model` 的参考实现。动作 = 3D 手部关键点差分 + 相机运动；latent world model 预测未来 latent 状态 + hand consistency loss；EgoDex+DROID 预训练、RoboCasa 微调（数据 1.74TB 在 HF）。训练依赖单独的 keypoint model 与 decoder，管线更重。
 
-### 里程碑（按 `docs/study.md §1` 的 L1 → L2 → L3 路线）
+### 里程碑
 
 完整路线 = **L1 pretrain → L2 post-train → L3 sim deployment**（+ L4 真机，无真机排除）。当前已完成工作全在 L1。
 
